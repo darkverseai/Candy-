@@ -1,0 +1,321 @@
+class CandyCrushGame {
+    constructor() {
+        this.gridSize = 6;
+        this.grid = [];
+        this.candyTypes = ['red', 'blue', 'green', 'yellow', 'purple', 'orange'];
+        this.candyEmojis = ['🍎', '🫐', '🍏', '⭐', '🍇', '🍊'];
+        this.selectedCell = null;
+        this.score = 0;
+        this.moves = 20;
+        this.targetScore = 1000;
+        this.gameOver = false;
+        this.isAnimating = false;
+
+        this.init();
+        this.setupEventListeners();
+    }
+
+    init() {
+        this.generateInitialGrid();
+        this.render();
+        this.removeInitialMatches();
+    }
+
+    generateInitialGrid() {
+        this.grid = [];
+        for (let row = 0; row < this.gridSize; row++) {
+            this.grid[row] = [];
+            for (let col = 0; col < this.gridSize; col++) {
+                this.grid[row][col] = this.getRandomCandy();
+            }
+        }
+    }
+
+    getRandomCandy() {
+        const randomIndex = Math.floor(Math.random() * this.candyTypes.length);
+        return {
+            type: this.candyTypes[randomIndex],
+            emoji: this.candyEmojis[randomIndex]
+        };
+    }
+
+    removeInitialMatches() {
+        let matchesFound = true;
+        while (matchesFound) {
+            matchesFound = false;
+            const matches = this.findAllMatches();
+            if (matches.length > 0) {
+                matchesFound = true;
+                matches.forEach(([row, col]) => {
+                    this.grid[row][col] = this.getRandomCandy();
+                });
+            }
+        }
+    }
+
+    setupEventListeners() {
+        const gameBoard = document.getElementById('gameBoard');
+        gameBoard.addEventListener('click', (e) => this.handleCellClick(e));
+        gameBoard.addEventListener('touchstart', (e) => this.handleCellClick(e), false);
+
+        document.getElementById('newGameBtn').addEventListener('click', () => this.newGame());
+        document.getElementById('resetBtn').addEventListener('click', () => this.resetGame());
+        document.getElementById('modalBtn').addEventListener('click', () => this.closeModal());
+    }
+
+    handleCellClick(e) {
+        if (this.gameOver || this.isAnimating) return;
+
+        const cell = e.target.closest('.candy');
+        if (!cell) return;
+
+        e.preventDefault();
+        const index = Array.from(document.querySelectorAll('.candy')).indexOf(cell);
+        const row = Math.floor(index / this.gridSize);
+        const col = index % this.gridSize;
+
+        if (!this.selectedCell) {
+            this.selectCell(row, col);
+        } else {
+            if (this.selectedCell.row === row && this.selectedCell.col === col) {
+                this.deselectCell();
+            } else if (this.isAdjacent(this.selectedCell.row, this.selectedCell.col, row, col)) {
+                this.swap(this.selectedCell.row, this.selectedCell.col, row, col);
+            } else {
+                this.deselectCell();
+                this.selectCell(row, col);
+            }
+        }
+    }
+
+    selectCell(row, col) {
+        this.selectedCell = { row, col };
+        this.render();
+    }
+
+    deselectCell() {
+        this.selectedCell = null;
+        this.render();
+    }
+
+    isAdjacent(row1, col1, row2, col2) {
+        const rowDiff = Math.abs(row1 - row2);
+        const colDiff = Math.abs(col1 - col2);
+        return (rowDiff === 1 && colDiff === 0) || (rowDiff === 0 && colDiff === 1);
+    }
+
+    swap(row1, col1, row2, col2) {
+        this.isAnimating = true;
+        const temp = this.grid[row1][col1];
+        this.grid[row1][col1] = this.grid[row2][col2];
+        this.grid[row2][col2] = temp;
+
+        this.render();
+
+        setTimeout(() => {
+            const matches = this.findAllMatches();
+            if (matches.length > 0) {
+                this.moves--;
+                this.processMatches(matches);
+            } else {
+                const temp = this.grid[row1][col1];
+                this.grid[row1][col1] = this.grid[row2][col2];
+                this.grid[row2][col2] = temp;
+                this.render();
+                this.isAnimating = false;
+            }
+            this.selectedCell = null;
+        }, 100);
+    }
+
+    findAllMatches() {
+        const matches = new Set();
+
+        // Check horizontal matches
+        for (let row = 0; row < this.gridSize; row++) {
+            for (let col = 0; col < this.gridSize - 2; col++) {
+                if (
+                    this.grid[row][col].type === this.grid[row][col + 1].type &&
+                    this.grid[row][col].type === this.grid[row][col + 2].type
+                ) {
+                    matches.add(`${row},${col}`);
+                    matches.add(`${row},${col + 1}`);
+                    matches.add(`${row},${col + 2}`);
+                }
+            }
+        }
+
+        // Check vertical matches
+        for (let col = 0; col < this.gridSize; col++) {
+            for (let row = 0; row < this.gridSize - 2; row++) {
+                if (
+                    this.grid[row][col].type === this.grid[row + 1][col].type &&
+                    this.grid[row][col].type === this.grid[row + 2][col].type
+                ) {
+                    matches.add(`${row},${col}`);
+                    matches.add(`${row + 1},${col}`);
+                    matches.add(`${row + 2},${col}`);
+                }
+            }
+        }
+
+        return Array.from(matches).map(match => match.split(',').map(Number));
+    }
+
+    processMatches(matches) {
+        const matchCount = matches.length;
+        let points = 0;
+
+        if (matchCount === 3) points = 10;
+        else if (matchCount === 4) points = 25;
+        else if (matchCount === 5) points = 50;
+        else points = 10 * matchCount;
+
+        this.score += points;
+
+        matches.forEach(([row, col]) => {
+            this.grid[row][col] = null;
+        });
+
+        this.render();
+
+        setTimeout(() => {
+            this.applyGravity();
+            this.fillEmpty();
+            this.render();
+
+            setTimeout(() => {
+                const newMatches = this.findAllMatches();
+                if (newMatches.length > 0) {
+                    this.processMatches(newMatches);
+                } else {
+                    this.isAnimating = false;
+                    this.checkGameStatus();
+                }
+            }, 200);
+        }, 300);
+    }
+
+    applyGravity() {
+        for (let col = 0; col < this.gridSize; col++) {
+            let writePos = this.gridSize - 1;
+            for (let row = this.gridSize - 1; row >= 0; row--) {
+                if (this.grid[row][col] !== null) {
+                    this.grid[writePos][col] = this.grid[row][col];
+                    if (writePos !== row) {
+                        this.grid[row][col] = null;
+                    }
+                    writePos--;
+                }
+            }
+        }
+    }
+
+    fillEmpty() {
+        for (let col = 0; col < this.gridSize; col++) {
+            for (let row = 0; row < this.gridSize; row++) {
+                if (this.grid[row][col] === null) {
+                    this.grid[row][col] = this.getRandomCandy();
+                }
+            }
+        }
+    }
+
+    checkGameStatus() {
+        this.updateUI();
+
+        if (this.moves === 0) {
+            if (this.score >= this.targetScore) {
+                this.endGame(true, `🎉 YOU WON! Final Score: ${this.score}`);
+            } else {
+                this.endGame(false, `Game Over! Score: ${this.score} / ${this.targetScore}`);
+            }
+        } else if (this.score >= this.targetScore) {
+            this.endGame(true, `🎉 TARGET REACHED! Score: ${this.score}`);
+        }
+    }
+
+    updateUI() {
+        document.getElementById('score').textContent = this.score;
+        document.getElementById('moves').textContent = this.moves;
+
+        const statusEl = document.getElementById('gameStatus');
+        if (this.moves <= 5) {
+            statusEl.textContent = `⚠️ Only ${this.moves} moves left!`;
+            statusEl.className = 'game-status warning';
+        } else if (this.moves <= 10) {
+            statusEl.textContent = `${this.moves} moves remaining`;
+            statusEl.className = 'game-status';
+        } else if (this.score >= this.targetScore) {
+            statusEl.textContent = '🎉 Target reached!';
+            statusEl.className = 'game-status success';
+        } else {
+            statusEl.textContent = '';
+            statusEl.className = 'game-status';
+        }
+    }
+
+    endGame(won, message) {
+        this.gameOver = true;
+        this.showModal(won ? '🎉 You Won!' : '😢 Game Over!', message);
+    }
+
+    showModal(title, message) {
+        document.getElementById('modalTitle').textContent = title;
+        document.getElementById('modalMessage').textContent = message;
+        document.getElementById('modal').style.display = 'block';
+    }
+
+    closeModal() {
+        document.getElementById('modal').style.display = 'none';
+        this.newGame();
+    }
+
+    newGame() {
+        this.score = 0;
+        this.moves = 20;
+        this.gameOver = false;
+        this.selectedCell = null;
+        this.isAnimating = false;
+        this.generateInitialGrid();
+        this.removeInitialMatches();
+        this.updateUI();
+        this.render();
+        document.getElementById('modal').style.display = 'none';
+    }
+
+    resetGame() {
+        if (confirm('Are you sure you want to reset the game?')) {
+            this.newGame();
+        }
+    }
+
+    render() {
+        const gameBoard = document.getElementById('gameBoard');
+        gameBoard.innerHTML = '';
+
+        for (let row = 0; row < this.gridSize; row++) {
+            for (let col = 0; col < this.gridSize; col++) {
+                const candy = this.grid[row][col];
+                const candyEl = document.createElement('div');
+                candyEl.className = `candy candy-${candy.type}`;
+                candyEl.textContent = candy.emoji;
+
+                if (
+                    this.selectedCell &&
+                    this.selectedCell.row === row &&
+                    this.selectedCell.col === col
+                ) {
+                    candyEl.classList.add('selected');
+                }
+
+                gameBoard.appendChild(candyEl);
+            }
+        }
+    }
+}
+
+// Initialize game when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    new CandyCrushGame();
+});
